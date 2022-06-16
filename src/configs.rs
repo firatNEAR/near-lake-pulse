@@ -12,16 +12,14 @@ use clap::Parser;
     next_line_help(true)
 )]
 pub(crate) struct Opts {
-    #[clap(long, short, default_value = "3030")]
+    #[clap(long, short, default_value = "3031")]
     pub http_port: u16,
-    #[clap(long)]
-    pub telegram_token: Option<String>,
-    #[clap(long)]
-    pub chat_id: Vec<String>,
     #[clap(long, default_value = "10")]
     pub stats_interval_sec: u64,
     #[clap(subcommand)]
     pub chain_id: ChainId,
+    #[clap(long)]
+    pub accounts: String,
 }
 
 #[derive(Parser, Debug)]
@@ -30,7 +28,7 @@ pub(crate) enum ChainId {
     Testnet(RunArgs),
 }
 
-#[derive(Parser, Debug)]
+#[derive(Parser, Debug, Clone)]
 pub(crate) struct RunArgs {
     /// Block heigh to start watching from
     #[clap(short, long)]

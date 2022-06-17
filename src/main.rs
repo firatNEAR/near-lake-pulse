@@ -4,6 +4,7 @@ use lazy_static::lazy_static;
 use prometheus::{Encoder, IntCounter, IntGauge};
 use std::{
     collections::{HashMap, HashSet},
+    ops::{Add, Sub},
     str::FromStr,
     sync::Arc,
     time::Duration,
@@ -23,25 +24,19 @@ lazy_static! {
         "Total account count by creator"
     )
     .unwrap();
-    // static ref TOTAL_HISTOGRAM: Histogram = Histogram::with_opts(HistogramOpts::new(
-    //     "total_account_histogram",
-    //     "Total account count by creator histogram"
-    // ))
-    // .into();
     static ref TOTAL_NUMBER_OF_TRANSACTION_BY_CREATED: IntCounter = IntCounter::new(
         "total_transaction_counter_by_created",
         "Total number of transaction by created"
-    ).unwrap();
-    static ref DAILY_ACTIVE_ACCOUNTS: IntGauge = IntGauge::new(
-        "daily_active_accounts",
-        "Daily active accounts"
     )
     .unwrap();
+    static ref DAILY_ACTIVE_ACCOUNTS: IntGauge =
+        IntGauge::new("daily_active_accounts", "Daily active accounts").unwrap();
 }
 // The timestamp (nanos) when transfers were enabled in the Mainnet after community voting
 // Tuesday, 13 October 2020 18:38:58.293
 pub const TRANSFERS_ENABLED: Duration = Duration::from_nanos(1602614338293769340);
 pub const DAY: Duration = Duration::from_secs(60 * 60 * 24);
+
 #[derive(Debug, Clone)]
 struct Stats {
     pub total_account_by_creator: u64,
@@ -78,6 +73,7 @@ async fn main() -> Result<(), tokio::io::Error> {
     prometheus::default_registry()
         .register(Box::new(DAILY_ACTIVE_ACCOUNTS.clone()))
         .unwrap();
+
     let stats: Arc<Mutex<Stats>> = Arc::new(Mutex::new(Stats::new()));
     let watching_list = opts
         .accounts
@@ -145,8 +141,10 @@ async fn listen_blocks(
     // This will be a list of receipt ids we're following
     let mut wanted_receipt_ids = HashSet::<String>::new();
     // This is the block_timestamp of the starting block
-    let mut block_start_timestamp: Duration =
+    let block_start_timestamp: Duration =
         Duration::from_nanos(stream.recv().await.unwrap().block.header.timestamp_nanosec);
+    // This duration will be used to calculate the daily active users at 00:10 UTC each day
+    let mut day_to_compute = calculate_daily_duration(block_start_timestamp);
     // Boilerplate code to listen the stream
     while let Some(streamer_message) = stream.recv().await {
         for shard in streamer_message.shards {
@@ -216,13 +214,13 @@ async fn listen_blocks(
                         DAILY_ACTIVE_ACCOUNTS
                             .set(stats_lock.daily_active_accounts.len().try_into().unwrap());
                         //if we are at the end of the day, reset the block_start_timestamp and clear the daily active accounts
-                        if block_start_timestamp + DAY
-                            == Duration::from_nanos(streamer_message.block.header.timestamp_nanosec)
+                        if day_to_compute
+                            >= Duration::from_nanos(streamer_message.block.header.timestamp_nanosec)
                         {
                             DAILY_ACTIVE_ACCOUNTS.set(0);
-                            block_start_timestamp = Duration::from_nanos(
+                            day_to_compute = calculate_daily_duration(Duration::from_nanos(
                                 streamer_message.block.header.timestamp_nanosec,
-                            );
+                            ));
                             stats_lock.daily_active_accounts.clear();
                         }
                     }
@@ -259,4 +257,15 @@ fn is_tx_signer_in_created_accounts(
     created_accounts: &HashSet<String>,
 ) -> bool {
     created_accounts.contains(&tx.transaction.signer_id.to_string())
+}
+
+fn calculate_daily_duration(current_timestamp: Duration) -> Duration {
+    current_timestamp
+        .sub(Duration::from_nanos(
+            (current_timestamp.as_nanos() % DAY.as_nanos())
+                .try_into()
+                .unwrap(),
+        ))
+        .add(DAY)
+        .add(Duration::from_secs(10 * 60))
 }

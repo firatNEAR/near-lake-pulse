@@ -215,7 +215,7 @@ async fn listen_blocks(
                             .set(stats_lock.daily_active_accounts.len().try_into().unwrap());
                         //if we are at the end of the day, reset the block_start_timestamp and clear the daily active accounts
                         if day_to_compute
-                            >= Duration::from_nanos(streamer_message.block.header.timestamp_nanosec)
+                            <= Duration::from_nanos(streamer_message.block.header.timestamp_nanosec)
                         {
                             DAILY_ACTIVE_ACCOUNTS.set(0);
                             day_to_compute = calculate_daily_duration(Duration::from_nanos(
@@ -224,20 +224,16 @@ async fn listen_blocks(
                             stats_lock.daily_active_accounts.clear();
                         }
                     }
-                    drop(stats_lock);
-                    if let near_indexer_primitives::views::ReceiptEnumView::Action {
-                        signer_id,
-                        ..
-                    } = &execution_outcome.receipt.receipt
-                    {
-                        eprintln!("{}", signer_id);
-                    }
                     eprintln!(
-                        "Current account number:{:?} and Current total transactions by created accounts {:?}, current total daily active users {:?}",
+                        "Current account number:{:?} and Current total transactions by created accounts {:?}",
                         TOTAL_ACCOUNTS_COUNTER_BY_CREATOR.get(),
                         TOTAL_NUMBER_OF_TRANSACTION_BY_CREATED.get(),
+                    );
+                    eprintln!(
+                        "Current total daily active users {:?}",
                         DAILY_ACTIVE_ACCOUNTS.get(),
                     );
+                    drop(stats_lock);
                     // remove tx from hashmap
                     tx_receipt_ids.remove(receipt_id.as_str());
                 }

@@ -14,7 +14,10 @@ use tracing::info;
 use tracing_subscriber::EnvFilter;
 
 use configs::Opts;
-use near_lake_framework::{near_indexer_primitives, LakeConfig};
+use near_lake_framework::{
+    near_indexer_primitives::{self, views::ReceiptEnumView},
+    LakeConfig,
+};
 
 mod configs;
 
@@ -31,6 +34,11 @@ lazy_static! {
     .unwrap();
     static ref DAILY_ACTIVE_ACCOUNTS: IntGauge =
         IntGauge::new("daily_active_accounts", "Daily active accounts").unwrap();
+    static ref DAILY_NUMBER_OF_TRANSACTIONS_BY_CREATED: IntGauge = IntGauge::new(
+        "daily_number_of_transactions_by_created",
+        "Daily number of transaction by created accounts"
+    )
+    .unwrap();
 }
 // The timestamp (nanos) when transfers were enabled in the Mainnet after community voting
 // Tuesday, 13 October 2020 18:38:58.293
@@ -42,6 +50,7 @@ struct Stats {
     pub total_account_by_creator: u64,
     pub created_accounts: HashSet<String>,
     pub daily_active_accounts: HashSet<String>,
+    pub daily_number_of_transactions_by_created: i64,
 }
 
 impl Stats {
@@ -50,6 +59,7 @@ impl Stats {
             total_account_by_creator: 0,
             created_accounts: HashSet::new(),
             daily_active_accounts: HashSet::new(),
+            daily_number_of_transactions_by_created: 0,
         }
     }
 }
@@ -73,7 +83,9 @@ async fn main() -> Result<(), tokio::io::Error> {
     prometheus::default_registry()
         .register(Box::new(DAILY_ACTIVE_ACCOUNTS.clone()))
         .unwrap();
-
+    prometheus::default_registry()
+        .register(Box::new(DAILY_NUMBER_OF_TRANSACTIONS_BY_CREATED.clone()))
+        .unwrap();
     let stats: Arc<Mutex<Stats>> = Arc::new(Mutex::new(Stats::new()));
     let watching_list = opts
         .accounts
@@ -195,7 +207,12 @@ async fn listen_blocks(
                     );
                     let mut stats_lock = stats.lock().await;
                     // if the transaction is initiated by the master account increase the number of the created accounts
-                    if watching_list.contains(&execution_outcome.receipt.predecessor_id) {
+                    if watching_list.contains(&execution_outcome.receipt.predecessor_id)
+                        && matches!(
+                            &execution_outcome.receipt.receipt,
+                            ReceiptEnumView::Action { .. }
+                        )
+                    {
                         TOTAL_ACCOUNTS_COUNTER_BY_CREATOR.inc();
                         stats_lock.total_account_by_creator += 1;
                         stats_lock
@@ -210,28 +227,34 @@ async fn listen_blocks(
                         stats_lock
                             .daily_active_accounts
                             .insert(execution_outcome.receipt.predecessor_id.to_string());
+                        stats_lock.daily_number_of_transactions_by_created += 1;
                         TOTAL_NUMBER_OF_TRANSACTION_BY_CREATED.inc();
                         DAILY_ACTIVE_ACCOUNTS
                             .set(stats_lock.daily_active_accounts.len().try_into().unwrap());
+                        DAILY_NUMBER_OF_TRANSACTIONS_BY_CREATED
+                            .set(stats_lock.daily_number_of_transactions_by_created);
                         //if we are at the end of the day, reset the block_start_timestamp and clear the daily active accounts
                         if day_to_compute
                             <= Duration::from_nanos(streamer_message.block.header.timestamp_nanosec)
                         {
                             DAILY_ACTIVE_ACCOUNTS.set(0);
+                            DAILY_NUMBER_OF_TRANSACTIONS_BY_CREATED.set(0);
                             day_to_compute = calculate_daily_duration(Duration::from_nanos(
                                 streamer_message.block.header.timestamp_nanosec,
                             ));
                             stats_lock.daily_active_accounts.clear();
+                            stats_lock.daily_number_of_transactions_by_created = 0;
                         }
                     }
                     eprintln!(
-                        "Current account number:{:?} and Current total transactions by created accounts {:?}",
+                        "Current account count:{:?} and Current total transactions by created accounts {:?}",
                         TOTAL_ACCOUNTS_COUNTER_BY_CREATOR.get(),
                         TOTAL_NUMBER_OF_TRANSACTION_BY_CREATED.get(),
                     );
                     eprintln!(
-                        "Current total daily active users {:?}",
+                        "Current daily active users {:?} and Current daily number of transactions by created accounts {:?}",
                         DAILY_ACTIVE_ACCOUNTS.get(),
+                        DAILY_NUMBER_OF_TRANSACTIONS_BY_CREATED.get(),
                     );
                     drop(stats_lock);
                     // remove tx from hashmap

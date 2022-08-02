@@ -12,7 +12,7 @@ use clap::Parser;
     next_line_help(true)
 )]
 pub(crate) struct Opts {
-    #[clap(long, short, default_value = "3031")]
+    #[clap(long, short, default_value = "3030")]
     pub http_port: u16,
     #[clap(long, default_value = "10")]
     pub stats_interval_sec: u64,

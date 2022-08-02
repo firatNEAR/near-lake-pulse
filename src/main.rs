@@ -167,7 +167,8 @@ async fn listen_blocks(
             };
 
             for transaction in chunk.transactions {
-                // Check if transaction signer id is one of the list we are interested in or if transaction signer id is one of the accounts created by the master account
+                // Check if transaction signer id is one of the list we are interested in
+                // or if transaction signer id is one of the accounts created by the master account
                 if is_tx_signer_watched(&transaction, &watching_list)
                     || is_tx_signer_in_created_accounts(
                         &transaction,
@@ -206,7 +207,8 @@ async fn listen_blocks(
                         execution_outcome.execution_outcome.outcome.status
                     );
                     let mut stats_lock = stats.lock().await;
-                    // if the transaction is initiated by the master account increase the number of the created accounts
+                    // if the transaction is initiated by the master account increase
+                    //the number of the created accounts
                     if watching_list.contains(&execution_outcome.receipt.predecessor_id)
                         && matches!(
                             &execution_outcome.receipt.receipt,
@@ -219,7 +221,9 @@ async fn listen_blocks(
                             .created_accounts
                             .insert(execution_outcome.receipt.receiver_id.to_string());
                     }
-                    //If the transaction is created by a child account increase the total transaction counter and include them in daily active accounts
+                    //If the transaction is created by a child account increase the
+                    //total transaction counter, include them in daily active accounts,
+                    //and increase daily total transaction counter
                     if stats_lock
                         .created_accounts
                         .contains(&execution_outcome.receipt.predecessor_id.to_string())
@@ -233,7 +237,8 @@ async fn listen_blocks(
                             .set(stats_lock.daily_active_accounts.len().try_into().unwrap());
                         DAILY_NUMBER_OF_TRANSACTIONS_BY_CREATED
                             .set(stats_lock.daily_number_of_transactions_by_created);
-                        //if we are at the end of the day, reset the block_start_timestamp and clear the daily active accounts
+                        //if we are at the end of the day, reset the block_start_timestamp
+                        //and clear the daily active accounts and daily total transactions
                         if day_to_compute
                             <= Duration::from_nanos(streamer_message.block.header.timestamp_nanosec)
                         {

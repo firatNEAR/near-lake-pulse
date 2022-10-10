@@ -95,6 +95,8 @@ async fn main() -> Result<(), tokio::io::Error> {
         })
         .collect();
 
+    eprintln!("The watching list {:?}", watching_list);
+
     tokio::spawn(async move { listen_blocks(stream, watching_list, Arc::clone(&stats)).await });
 
     HttpServer::new(|| App::new().service(metrics))
@@ -159,6 +161,10 @@ async fn listen_blocks(
     let mut day_to_compute = calculate_daily_duration(block_start_timestamp);
     // Boilerplate code to listen the stream
     while let Some(streamer_message) = stream.recv().await {
+        eprint!(
+            "Current block height: {:?}",
+            streamer_message.block.header.height
+        );
         for shard in streamer_message.shards {
             let chunk = if let Some(chunk) = shard.chunk {
                 chunk
@@ -215,6 +221,15 @@ async fn listen_blocks(
                             ReceiptEnumView::Action { .. }
                         )
                     {
+                        eprintln!(
+                            "New account created in block_id {:?} and block number {:?}",
+                            execution_outcome.execution_outcome.block_hash,
+                            streamer_message.block.header.height,
+                        );
+                        eprintln!(
+                            "New account created by {:?}",
+                            execution_outcome.receipt.predecessor_id
+                        );
                         TOTAL_ACCOUNTS_COUNTER_BY_CREATOR.inc();
                         stats_lock.total_account_by_creator += 1;
                         stats_lock
